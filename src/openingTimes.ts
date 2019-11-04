@@ -224,7 +224,7 @@ function sortBySpecificity(x: any) {
 
 
 function getNextDayOfWeek(weekDay: WeekdayName): WeekdayName {
-  const idx = DaysOfTheWeekInOrder[weekDay];
+  const idx = DaysOfTheWeekInOrder.indexOf(weekDay);
   const newIdx = idx < DaysOfTheWeekInOrder.length - 1 ? idx + 1 : 0;
   return DaysOfTheWeekInOrder[newIdx];
 }

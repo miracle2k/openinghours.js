@@ -1,12 +1,24 @@
 {
   "name": "openinghours.js",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "files": [
+    "dist"
+  ],
+  "types": "dist/index.d.ts",
   "license": "MIT",
+  "scripts": {
+    "build": "rollup -c && tsc"
+  },
   "devDependencies": {
+    "@types/date-fns": "^2.6.0",
     "@types/jest": "^24.0.21",
     "date-fns": "^2.6.0",
     "jest": "^24.9.0",
+    "rollup": "^1.26.3",
+    "rollup-plugin-terser": "^5.1.2",
+    "rollup-plugin-typescript2": "^0.24.3",
     "ts-jest": "^24.1.0"
   },
   "dependencies": {
