@@ -19,7 +19,7 @@
  *    Rule 1: Tuesday, open from 08:00 to 15:00.
  *    Rule 2: 20th October, a Tuesday, open from 18:00 to 20:00.
  *
- * What does it mean? In all likelyhood, that on the 20h of October, we only open at 6, and rule 1 is fully replaced.
+ * What does it mean? In all likelihood, that on the 20h of October, we only open at 6, and rule 1 is fully replaced.
  *
  * How about this:
  *
@@ -47,6 +47,7 @@
  */
 
 import { getDay, isAfter, isBefore, parse, addDays, set } from 'date-fns'
+import {toDate, zonedTimeToUtc} from "date-fns-tz";
 
 
 type WeekdayName = 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday';
@@ -74,13 +75,21 @@ type OpeningHoursState = {
 
 /**
  * Return if the place is open or closed, and when it opens or closes.
+ *
+ * Timezone rules:
+ *
+ * - If `date` is a `Date` instance, it is used as-is.
+ * - If it is a string with a timezone component, it is parsed correctly.
+ * - If it is a string without a timezone component, `opts.timezone` is used.
+ * - If there is no `opts.timezone`, then the local timezone is used.
  */
 export function getCurrentState(rules: OpeningTimes, opts?: {
-  date: Date
+  date: Date|string,
+  timezone?: string
 }): OpeningHoursState {
   let now;
   if (opts && opts.date) {
-    now = opts.date;
+    now = toDate(opts.date, {timeZone: opts.timezone});
   } else {
     now = new Date();
   }
@@ -93,7 +102,7 @@ export function getCurrentState(rules: OpeningTimes, opts?: {
     // What does this rule tell us about whether we are open, when we close
     // or when we might be opening next?
 
-    const result = testRuleForOpenNow(rule, now);
+    const result = testRuleForOpenNow(rule, now, {timezone: opts.timezone});
     if (!result) {
       continue;
     }
@@ -109,8 +118,12 @@ export function getCurrentState(rules: OpeningTimes, opts?: {
     }
 
     // OK, so we know if we are closed or open, but when is the next state change?
-    const nextChange = getNextStateChange(
-      rules, now, result.isOpen ? 'close' : 'open');
+    const nextChange = getNextStateChange({
+      rules,
+      startAt: now,
+      lookingFor: result.isOpen ? 'close' : 'open',
+      timezone: opts.timezone
+    });
     if (result.isOpen === true) {
       result.closesAt = nextChange;
     }
@@ -127,10 +140,16 @@ export function getCurrentState(rules: OpeningTimes, opts?: {
 }
 
 
-function getNextStateChange(rules: OpeningTimes, now: Date, lookingFor: 'open'|'close'): Date|null {
-  const sortedRules = sortBySpecificity(rules);
+function getNextStateChange(opts: {
+  rules: OpeningTimes,
+  startAt: Date,
+  lookingFor: 'open'|'close',
+  timezone: string
+}): Date|null {
+  const {lookingFor, timezone} = opts;
+  const sortedRules = sortBySpecificity(opts.rules);
 
-  let current = now;
+  let current = opts.startAt;
   while (true) {
 
     for (const rule of sortedRules) {
@@ -138,12 +157,12 @@ function getNextStateChange(rules: OpeningTimes, now: Date, lookingFor: 'open'|'
         continue;
       }
 
-      const opens = timeToDate(current, rule.opens);
-      const closes = timeToDate(current, rule.closes);
+      const opens = timeToDate(rule.opens, {date: current, timezone});
+      const closes = timeToDate(rule.closes, {date: current, timezone});
 
       // If we are still on the first day, we need to make sure we also
       // test the time.
-      if (current === now) {
+      if (current === opts.startAt) {
         if (lookingFor == 'open') {
           if (isAfter(current, opens)) {
             continue;
@@ -185,13 +204,13 @@ function getNextStateChange(rules: OpeningTimes, now: Date, lookingFor: 'open'|'
  * Also, if this rule includes a closing time, that's it. But it might not,
  * indicating "all hours".
  */
-function testRuleForOpenNow(rule: OpeningTimesRule, date: Date): OpeningHoursState|null {
+function testRuleForOpenNow(rule: OpeningTimesRule, date: Date, opts: {timezone: string}): OpeningHoursState|null {
   if (!ruleAppliesToDay(rule, date)) {
     return null;
   }
 
-  const opens = timeToDate(date, rule.opens);
-  const closes = timeToDate(date, rule.closes);
+  const opens = timeToDate(rule.opens, {date, timezone: opts.timezone});
+  const closes = timeToDate(rule.closes, {date, timezone: opts.timezone});
   const isOpen = isAfter(date, opens) && isBefore(date, closes);
   return {isOpen};
 }
@@ -211,10 +230,24 @@ function ruleAppliesToDay(rule: OpeningTimesRule, day: Date): boolean {
 }
 
 
-function timeToDate(date: Date, time: string): Date {
-  return parse(time, 'HH:mm', date);
+/**
+ * Convert a `time` string such as `04:33` to a full `Date` instance, using
+ * `date` as the base (it will provide the day/month/year).
+ *
+ * Because JavaScript date objects are always in the local timezone, any such
+ * time would therefore also be situated in the local timezone.
+ *
+ * For this reason, we also require the caller to provide the timezone in
+ * which time time in `time` is supposed to be set.
+ */
+function timeToDate(time: string, opts: {
+  date: Date,
+  timezone: string
+}): Date {
+  let result = parse(time, 'HH:mm', opts.date);
+  result = zonedTimeToUtc(result, opts.timezone);
+  return result;
 }
-
 
 
 function sortBySpecificity(x: any) {

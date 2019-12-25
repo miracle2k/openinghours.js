@@ -14,7 +14,6 @@
   "devDependencies": {
     "@types/date-fns": "^2.6.0",
     "@types/jest": "^24.0.21",
-    "date-fns": "^2.6.0",
     "jest": "^24.9.0",
     "rollup": "^1.26.3",
     "rollup-plugin-terser": "^5.1.2",
@@ -22,5 +21,8 @@
     "ts-jest": "^24.1.0",
     "typescript": "^3.6.4"
   },
-  "dependencies": {}
+  "dependencies": {
+    "date-fns": "^2.6",
+    "date-fns-tz": "^1"
+  }
 }
