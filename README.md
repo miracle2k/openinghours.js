@@ -82,7 +82,7 @@ const result = {
 
 The library fully supports timezones.
 
-For any time values given in the rule set, you can pass a `rulesTimezone` option:
+To declare which timezone the open/close time rules refer to, you can pass a `rulesTimezone` option:
 
 ```javascript
 getCurrentState(
@@ -102,7 +102,10 @@ getCurrentState(
 If you run the above on a GMT machine (so the time queried will be 07:30 GMT) while Europe/Berlin is `GMT+1`, then
 the result will be "is open", because the shop opened at 7am in GMT time (and at 8am in Europe/Berlin time).
 
-If not given, we assume ``06:00`` means 6am in the local timezone.
+*It is strongly recommended that you pass this option*, as the results you get will otherwise depend on the host 
+machine timezone you run the query on: If not given, we assume ``06:00`` means 6am in the local timezone. If your
+code runs in a browser on a visitor's machine in `America/New_York` at 6am New York time, we'll assume the entity
+is just opening, which will not be true if it is situated in a different timezone.
 
 For the date you want to query, you can pass a `luxon.DateTime` object instead of a native `Date`:
 
@@ -118,9 +121,6 @@ getCurrentState(
   }
 );
 ```
- 
-Of you do not care about timezone, simply do not specify any. All calculations will run in whatever the local
-timezone is, which will not matter to you. 
 
 
 # Other libraries
