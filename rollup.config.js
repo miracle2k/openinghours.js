@@ -1,5 +1,8 @@
 import typescript from 'rollup-plugin-typescript2'
+import visualizer from 'rollup-plugin-visualizer';
+import nodeResolve from '@rollup/plugin-node-resolve';
 import pkg from './package.json'
+
 
 export default {
   input: 'src/index.ts',
@@ -16,9 +19,15 @@ export default {
   external: [
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.peerDependencies || {}),
-  ],plugins: [
+  ],
+  plugins: [
     typescript({
       typescript: require('typescript'),
+      objectHashIgnoreUnknownHack: true,
     }),
+    // nodeResolve({
+    //   jsnext: true
+    // }),
+    visualizer()
   ],
 }

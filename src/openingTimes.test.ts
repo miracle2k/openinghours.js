@@ -1,5 +1,5 @@
 import {getCurrentState, OpeningTimes, timeToDate} from './openingTimes'
-import {toDate} from "date-fns-tz";
+import {DateTime} from "luxon";
 
 
 const basicRules: OpeningTimes = [
@@ -25,45 +25,41 @@ describe("timeToDate", () => {
   it("timezone of passed in  base date is considered when determining the day", () => {
     // TODO: If this test is not run in the GMT timezone, it may not serve its purpose and pass regardless.
     const result = timeToDate("06:00", {
-      onDay: {
-        date: toDate('2019-12-04T21:46:20 America/New_York'),
-        timezone: 'America/New_York'
-      }
+      onDay: DateTime.fromISO('2019-12-04T21:46:20', {zone: 'America/New_York'}),
     });
 
     // This is on the 4th, not the 5th, which would be the GMT date of that moment.
-    expect(result).toEqual(new Date("2019-12-04T06:00:00.000Z"))
+    expect(result.toJSDate()).toEqual(new Date("2019-12-04T06:00:00.000Z"))
   });
 
-  it("works", () => {
+  it("string timezone is respected", () => {
     const result = timeToDate("06:00", {
-      onDay: {
-        date: toDate('2019-12-04T21:46:20'),
-      },
-      timezone: 'America/New_York'
+      onDay: DateTime.fromISO('2019-12-04T21:46:20', {zone: 'America/New_York'}),
+      stringTimezone: 'America/New_York'
     });
 
-    // This is on the 4th, not the 5th, which would be the GMT date of that moment.
-    expect(result).toEqual(new Date("2019-12-04T06:00:00.000Z"))
+    // 06:00 America/New_York is 11:00 am in UTC
+    expect(result.toJSDate()).toEqual(new Date("2019-12-04T11:00:00.000Z"));
+    expect(result.zoneName).toEqual('America/New_York');
   });
 });
 
 test('already closed today, opens tomorrow', () => {
-  const result = getCurrentState(basicRules, {date: '2019-12-04 19:00:00', timezone: 'GMT'});
+  const result = getCurrentState(basicRules, {date: DateTime.fromISO('2019-12-04T19:00:00'), rulesTimezone: 'GMT'});
   expect(result).toEqual({"isOpen": false, "opensAt": new Date("2019-12-05T08:00:00.000Z")});
 });
 
 test('still open today', () => {
   const result = getCurrentState(basicRules, {
     date: new Date(2019, 11, 4, 15, 0, 0),
-    timezone: 'GMT'});
+    rulesTimezone: 'GMT'});
   expect(result).toEqual({"isOpen": true, "closesAt": new Date("2019-12-04T18:00:00.000Z")});
 });
 
 test('not yet open today', () => {
   const result = getCurrentState(basicRules, {
     date: new Date(2019, 11, 4, 4, 0, 0),
-    timezone: 'GMT'});
+    rulesTimezone: 'GMT'});
   expect(result).toEqual({"isOpen": false, "opensAt": new Date("2019-12-04T08:00:00.000Z")});
 });
 
