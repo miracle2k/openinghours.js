@@ -46,24 +46,63 @@
  * "next" opening time?
  */
 
+/**
+ * A note on dates, timezones and date-fns.
+ *
+ * - Javascript `Date` objects cannot carry a timezone. They are always set in the host machine time zone.
+ * - Because we now the host machine timezone, we know the moment in time a `Date` points to, and so, we
+ *   can *calculate* what the time would be any other timezone.
+ * - We can also do the reverse: If we want to represent a certain moment time in a certain timezone A as
+ *   a `Date` object, we can calculate the time in the local timezone that represents that desired moment
+ *   in time.
+ * - `date-fns-tz` can do those calculations.
+ * - The pertinent point however is that the name of the source timezone A has been lost.
+ * - This is important if we want to know what day of the week was intended, which is relevant for us
+ *   when evaluating our rules.
+ *
+ * As a result, we must carry both the `date` instance and the `timezone` is refers to, and make sure that
+ * we consider the timezone when calling helpers from `date-fns`. Other libraries such as `luxon` solve this
+ * by providing a better date object which can hold a timezone, but we want to stick with `date-fns` for now,
+ * believing it will result in a smaller bundle size. But make no mistake, we are paying for those bytes
+ * dearly with a considerable amount of complexity.
+ */
+
 import { getDay, isAfter, isBefore, parse, addDays, set } from 'date-fns'
-import {toDate, zonedTimeToUtc} from "date-fns-tz";
+import {toDate, utcToZonedTime, zonedTimeToUtc} from "date-fns-tz";
 
 
 type WeekdayName = 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday';
-const DaysOfTheWeekInOrder: WeekdayName[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const DaysOfTheWeekInOrder: WeekdayName[] = [
+    'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 
 export type OpeningTimesRule = {
   dayOfWeek?: WeekdayName|WeekdayName[],
   opens: string,
-  closes: string
+  closes: string,
+  validFrom?: string,
+  validThrough?: string
 };
 
 
 export type OpeningTimes = OpeningTimesRule[];
 
 
+/**
+ * See "A note on dates, timezones and date-fns".
+ */
+export interface DateWithTZ {
+  date: Date,
+  timezone?: string
+}
+
+
+/**
+ * Describe a view on the opening hours from a particular point in time.
+ *
+ * We are either open or closed in that moment, and have either an opening
+ * or a closing time coming up.
+ */
 type OpeningHoursState = {
   isOpen: true,
   closesAt?: Date
@@ -79,9 +118,17 @@ type OpeningHoursState = {
  * Timezone rules:
  *
  * - If `date` is a `Date` instance, it is used as-is.
+ *    - if opts.timezone is passed
+ *    - if not passed
+ * - If it is a string without a timezone component, `opts.timezone` is used,
+ *    or the local timezone.
  * - If it is a string with a timezone component, it is parsed correctly.
- * - If it is a string without a timezone component, `opts.timezone` is used.
- * - If there is no `opts.timezone`, then the local timezone is used.
+ *
+ * Internally, a `Date` instance is considered to really be in UTC, though
+ * a JavaScript `Date` is always set in the machine timezone. date-fns-tz works
+ * such that it finds the UTC moment in time you desire and puts it in a Date
+ * object that points to the same moment in the machine timezone. As a result,
+ * when it comes to "which weekday", the UTC day is what is meaningful.
  */
 export function getCurrentState(rules: OpeningTimes, opts?: {
   date: Date|string,
@@ -89,9 +136,14 @@ export function getCurrentState(rules: OpeningTimes, opts?: {
 }): OpeningHoursState {
   let now;
   if (opts && opts.date) {
-    now = toDate(opts.date, {timeZone: opts.timezone});
+    now = {
+      date: toDate(opts.date, {timeZone: opts.timezone}),
+      timezone: opts.timezone
+    };
   } else {
-    now = new Date();
+    now = {
+      date: new Date(),
+    };
   }
 
   // Loop by specificity. This works because quite well because each level
@@ -142,7 +194,7 @@ export function getCurrentState(rules: OpeningTimes, opts?: {
 
 function getNextStateChange(opts: {
   rules: OpeningTimes,
-  startAt: Date,
+  startAt: DateWithTZ,
   lookingFor: 'open'|'close',
   timezone: string
 }): Date|null {
@@ -157,19 +209,19 @@ function getNextStateChange(opts: {
         continue;
       }
 
-      const opens = timeToDate(rule.opens, {date: current, timezone});
-      const closes = timeToDate(rule.closes, {date: current, timezone});
+      const opens = timeToDate(rule.opens, {onDay: current, timezone});
+      const closes = timeToDate(rule.closes, {onDay: current, timezone});
 
       // If we are still on the first day, we need to make sure we also
       // test the time.
       if (current === opts.startAt) {
         if (lookingFor == 'open') {
-          if (isAfter(current, opens)) {
+          if (isAfter(current.date, opens)) {
             continue;
           }
         }
         if (lookingFor == 'close') {
-          if (isAfter(current, closes)) {
+          if (isAfter(current.date, closes)) {
             continue;
           }
         }
@@ -183,12 +235,16 @@ function getNextStateChange(opts: {
       }
     }
 
-    current = set(addDays(current, 1), {
+    let currentDate = set(addDays(current.date, 1), {
       hours: 0,
       minutes: 0,
       seconds: 0,
       milliseconds: 0
     });
+    current = {
+      ...current,
+      date: currentDate
+    }
   }
 }
 
@@ -204,19 +260,24 @@ function getNextStateChange(opts: {
  * Also, if this rule includes a closing time, that's it. But it might not,
  * indicating "all hours".
  */
-function testRuleForOpenNow(rule: OpeningTimesRule, date: Date, opts: {timezone: string}): OpeningHoursState|null {
+function testRuleForOpenNow(rule: OpeningTimesRule, date: DateWithTZ, opts: {timezone: string}): OpeningHoursState|null {
   if (!ruleAppliesToDay(rule, date)) {
     return null;
   }
 
-  const opens = timeToDate(rule.opens, {date, timezone: opts.timezone});
-  const closes = timeToDate(rule.closes, {date, timezone: opts.timezone});
-  const isOpen = isAfter(date, opens) && isBefore(date, closes);
+  const opens = timeToDate(rule.opens, {onDay: date, timezone: opts.timezone});
+  const closes = timeToDate(rule.closes, {onDay: date, timezone: opts.timezone});
+  const isOpen = isAfter(date.date, opens) && isBefore(date.date, closes);
   return {isOpen};
 }
 
 
-function ruleAppliesToDay(rule: OpeningTimesRule, day: Date): boolean {
+/**
+ * Test if the rule applies to the day in `Date`, by checking `dayOfWeek`
+ * and `validFrom` and `validThrough`. Times (and timezones) are irrelevant
+ * here, we only look at the full day.
+ */
+function ruleAppliesToDay(rule: OpeningTimesRule, day: DateWithTZ): boolean {
   const currentDayOfWeek = getDayOfWeek(day);
 
   // See if this rule matches.
@@ -226,25 +287,24 @@ function ruleAppliesToDay(rule: OpeningTimesRule, day: Date): boolean {
     }
   }
 
+  // Do not do more than X
+  if (rule.validFrom) {
+
+  }
+
   return true;
 }
 
 
 /**
- * Convert a `time` string such as `04:33` to a full `Date` instance, using
- * `date` as the base (it will provide the day/month/year).
- *
- * Because JavaScript date objects are always in the local timezone, any such
- * time would therefore also be situated in the local timezone.
- *
- * For this reason, we also require the caller to provide the timezone in
- * which time time in `time` is supposed to be set.
+ * Convert a `time` string such as `04:33` to a full `Date` instance, using `date` as the base (the date will
+ * provide the day/month/year).
  */
-function timeToDate(time: string, opts: {
-  date: Date,
-  timezone: string
+export function timeToDate(time: string, opts: {
+  onDay: DateWithTZ,
+  timezone?: string
 }): Date {
-  let result = parse(time, 'HH:mm', opts.date);
+  let result = parse(time, 'HH:mm', utcToZonedTime(opts.onDay.date, opts.onDay.timezone));
   result = zonedTimeToUtc(result, opts.timezone);
   return result;
 }
@@ -262,7 +322,11 @@ function getNextDayOfWeek(weekDay: WeekdayName): WeekdayName {
   return DaysOfTheWeekInOrder[newIdx];
 }
 
-function getDayOfWeek(time: Date): WeekdayName {
-  const day = getDay(time);
+/**
+ * Return the day of the week which covers the moment in time given by
+ * `time`, in the timezone given by `time`.
+ */
+function getDayOfWeek(time: DateWithTZ): WeekdayName {
+  const day = getDay(time.date);
   return DaysOfTheWeekInOrder[day];
 }
