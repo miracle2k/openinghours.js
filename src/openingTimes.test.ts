@@ -161,4 +161,21 @@ describe("getCurrentState", () => {
 
   });
 
+  describe('rulesTimezone',() => {
+    const result = getCurrentState(
+      [
+        {
+          opens: '08:00',
+          closes: '18:00'
+        }
+      ],
+      {
+        date: new Date("2019-12-05T07:30:00"),
+        rulesTimezone: 'Europe/Berlin'
+      }
+    );
+
+    expect(result).toEqual({"isOpen": true, "closesAt": new Date("2019-12-05T17:00:00.000Z")});
+  })
+
 });
