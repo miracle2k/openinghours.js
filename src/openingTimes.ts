@@ -84,21 +84,6 @@ type OpeningHoursState = {
 
 /**
  * Return if the place is open or closed, and when it opens or closes.
- *
- * Timezone rules:
- *
- * - If `date` is a `Date` instance, it is used as-is.
- *    - if opts.timezone is passed
- *    - if not passed
- * - If it is a string without a timezone component, `opts.timezone` is used,
- *    or the local timezone.
- * - If it is a string with a timezone component, it is parsed correctly.
- *
- * Internally, a `Date` instance is considered to really be in UTC, though
- * a JavaScript `Date` is always set in the machine timezone. date-fns-tz works
- * such that it finds the UTC moment in time you desire and puts it in a Date
- * object that points to the same moment in the machine timezone. As a result,
- * when it comes to "which weekday", the UTC day is what is meaningful.
  */
 export function getCurrentState(rules: OpeningTimes, opts?: {
   date?: Date|DateTime,
@@ -123,91 +108,118 @@ export function getCurrentState(rules: OpeningTimes, opts?: {
   // of specificity, in case it applies, is quiet clear
   const sortedRules = sortBySpecificity(rules);
 
-  for (const rule of sortedRules) {
-    // What does this rule tell us about whether we are open, when we close
-    // or when we might be opening next?
+  let matchingRule: OpeningHoursState|null = null;
 
-    const result = testRuleForOpenNow(rule, now, {rulesTimezone: opts?.rulesTimezone});
-    if (!result) {
+  for (const rule of sortedRules) {
+    // What does this rule tell us about whether we are open, when we close or when we might be opening next?
+    matchingRule = testRuleForOpenNow(rule, now, {rulesTimezone: opts?.rulesTimezone});
+    if (!matchingRule) {
       continue;
     }
-
-    // In some/many cases, this single rule can tell us not just if we are open or closed, but also when
-    // we will close or open (if the rule matched and has a open/close time upcoming, we do not allow this
-    // to be overridden).
-    if (result.isOpen && result.closesAt) {
-      return result;
-    }
-    if (!result.isOpen && result.opensAt) {
-      return result;
-    }
-
-    // OK, so we know if we are closed or open, but when is the next state change?
-    const nextChange = getNextStateChange({
-      rules,
-      startAt: now,
-      lookingFor: result.isOpen ? 'close' : 'open',
-      rulesTimezone: opts?.rulesTimezone
-    });
-    if (nextChange) {
-      if (result.isOpen) {
-        result.closesAt = nextChange.toJSDate();
-      } else {
-        result.opensAt = nextChange.toJSDate();
-      }
-    }
-    return result;
+    break;
   }
 
   // No rule  matched, so we are closed
-  return {
-    isOpen: false
-  };
-  // TODO: find the next opening time.
-  // TODO: what if there are none, how can we ignore a loop?
+  if (!matchingRule) {
+    matchingRule = {
+      isOpen: false
+    };
+  }
+
+  // In some/many cases, this single rule can tell us not just if we are open or closed, but also when
+  // we will close or open (if the rule matched and has a open/close time upcoming, we do not allow this
+  // to be overridden).
+  if (matchingRule.isOpen && matchingRule.closesAt) {
+    return matchingRule;
+  }
+  if (!matchingRule.isOpen && matchingRule.opensAt) {
+    return matchingRule;
+  }
+
+  // OK, so we know if we are closed or open, but when is the next state change?
+  const nextChange = getNextStateChange({
+    sortedRules,
+    startAt: now,
+    lookingFor: matchingRule.isOpen ? 'close' : 'open',
+    rulesTimezone: opts?.rulesTimezone
+  });
+  if (nextChange) {
+    if (matchingRule.isOpen) {
+      matchingRule.closesAt = nextChange.toJSDate();
+    } else {
+      matchingRule.opensAt = nextChange.toJSDate();
+    }
+  }
+  return matchingRule;
 }
 
 
+/**
+ * Loops from `startAt` to find the next close or open time.
+ */
 function getNextStateChange(opts: {
-  rules: OpeningTimes,
+  sortedRules: OpeningTimes,
   startAt: DateTime,
   lookingFor: 'open'|'close',
   rulesTimezone?: string
 }): DateTime|null {
   const {lookingFor, rulesTimezone} = opts;
-  const sortedRules = sortBySpecificity(opts.rules);
 
   let current = opts.startAt;
   while (true) {
+    const rule = findMatchingRule({sortedRules: opts.sortedRules, date: current});
 
-    for (const rule of sortedRules) {
-      if (!ruleAppliesToDay(rule, current)) {
-        continue;
-      }
+    let closedWholeDay: boolean;
+    let openWholeDay: boolean;
+    let opens: DateTime|null;
+    let closes: DateTime;
+    if (rule) {
+      closedWholeDay = (rule.opens === '00:00' && rule.closes === '00:00');
+      openWholeDay = (rule.opens === '00:00' && rule.closes === '23:59');
 
-      const opens = timeToDate(rule.opens, {onDay: current, stringTimezone: rulesTimezone});
-      const closes = timeToDate(rule.closes, {onDay: current, stringTimezone: rulesTimezone});
+      opens = timeToDate(rule.opens, {onDay: current, stringTimezone: rulesTimezone});
+      closes = timeToDate(rule.closes, {onDay: current, stringTimezone: rulesTimezone});
+    }
 
-      // If we are still on the first day, we need to make sure we also
-      // test the time.
-      if (current === opts.startAt) {
-        if (lookingFor == 'open') {
-          if (current > opens) {
-            continue;
-          }
-        }
-        if (lookingFor == 'close') {
-          if (current > closes) {
-            continue;
-          }
-        }
-      }
+    // No rule found means closed the whole day.
+    else {
+      closedWholeDay = false;
+      openWholeDay = false;
+      opens = null;
+      closes = timeToDate('00:00', {onDay: current, stringTimezone: rulesTimezone});
+    }
 
-      if (lookingFor == 'open') {
+    const isFirstDayOfSearch = current === opts.startAt;
+
+    if (lookingFor == 'open') {
+      // If the rule marks as "closed the whole day", then we cannot find the desired open time here.
+      if (openWholeDay) {
         return opens;
       }
-      if (lookingFor == 'close') {
-        return closes;
+      if (!closedWholeDay && opens) {
+        if (isFirstDayOfSearch) {
+          // Only accept a rule opening time or closing time as "next" if it is after the search time.
+          if (current <= opens) {
+            return opens;
+          }
+        }
+        else {
+          return opens;
+        }
+      }
+    }
+    if (lookingFor == 'close') {
+      // If the rule marks as "open the whole day", then we cannot find the desired close time here.
+      if (!openWholeDay) {
+        if (isFirstDayOfSearch) {
+          // Only accept a rule opening time or closing time as "next" if it is after the search time.
+          if (current <= closes) {
+            return closes;
+          }
+        }
+        else {
+          return closes;
+        }
       }
     }
 
@@ -218,6 +230,20 @@ function getNextStateChange(opts: {
       millisecond: 0
     });
   }
+}
+
+
+function findMatchingRule(opts: {
+  sortedRules: OpeningTimesRule[],
+  date: DateTime
+}): OpeningTimesRule|null {
+  for (const rule of opts.sortedRules) {
+    if (!ruleAppliesToDay(rule, opts.date)) {
+      continue;
+    }
+    return rule;
+  }
+  return null;
 }
 
 
@@ -245,9 +271,7 @@ function testRuleForOpenNow(rule: OpeningTimesRule, date: DateTime, opts: {rules
 
 
 /**
- * Test if the rule applies to the day in `Date`, by checking `dayOfWeek`
- * and `validFrom` and `validThrough`. Times (and timezones) are irrelevant
- * here, we only look at the full day.
+ * Test if the rule applies to the day in `Date`, by checking `dayOfWeek` and `validFrom` and `validThrough`.
  */
 function ruleAppliesToDay(rule: OpeningTimesRule, day: DateTime): boolean {
   const currentDayOfWeek = getDayOfWeek(day);
@@ -259,9 +283,15 @@ function ruleAppliesToDay(rule: OpeningTimesRule, day: DateTime): boolean {
     }
   }
 
-  // Do not do more than X
   if (rule.validFrom) {
-
+    if (day < DateTime.fromISO(rule.validFrom)) {
+      return false;
+    }
+  }
+  if (rule.validThrough) {
+    if (day > DateTime.fromISO(rule.validThrough)) {
+      return false;
+    }
   }
 
   return true;
@@ -287,22 +317,28 @@ export function timeToDate(time: string, opts: {
 }
 
 
-function sortBySpecificity(x: any) {
-  // For now, assume is sorted correctly.
-  return x;
+function sortBySpecificity(rules: OpeningTimes): OpeningTimes {
+  rules = [...rules];
+  rules.sort((a, b) => {
+    // First, the date range restrictions
+    const aDates = [a.validThrough, a.validFrom].filter(x => !!x).length;
+    const bDates = [b.validThrough, b.validFrom].filter(x => !!x).length;
+    if (aDates !== bDates) {
+      return bDates - aDates;
+    }
+
+    // Second, if "dayOfWeek" is set.
+    const aHasWeek = a.dayOfWeek !== undefined ? 1 : 0;
+    const bHasWeek = b.dayOfWeek !== undefined ? 1 : 0;
+    return bHasWeek - aHasWeek;
+  });
+  return rules;
 }
 
-
-function getNextDayOfWeek(weekDay: WeekdayName): WeekdayName {
-  const idx = DaysOfTheWeekInOrder.indexOf(weekDay);
-  const newIdx = idx < DaysOfTheWeekInOrder.length - 1 ? idx + 1 : 0;
-  return DaysOfTheWeekInOrder[newIdx];
-}
 
 /**
- * Return the day of the week which covers the moment in time given by
- * `time`, in the timezone given by `time`.
+ * Return the day of the week which covers the moment in time given by `time`,
  */
 function getDayOfWeek(time: DateTime): WeekdayName {
-  return DaysOfTheWeekInOrder[time.day];
+  return DaysOfTheWeekInOrder[time.weekday];
 }
