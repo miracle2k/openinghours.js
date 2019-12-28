@@ -87,7 +87,7 @@ type OpeningHoursState = {
  */
 export function getCurrentState(rules: OpeningTimes, opts?: {
   date?: Date|DateTime,
-  rulesTimezone?: string
+  rulesTimezone: string
 }): OpeningHoursState {
   let now: DateTime;
 

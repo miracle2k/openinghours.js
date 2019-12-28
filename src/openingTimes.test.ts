@@ -140,7 +140,10 @@ describe("getCurrentState", () => {
           validFrom: '2019-11-05',
           validThrough: '2019-12-10',
         }
-      ], {date: new Date(2019, 11, 4, 19, 0, 0)});
+      ], {
+        date: new Date(2019, 11, 4, 19, 0, 0),
+        rulesTimezone: 'local',
+      });
 
       expect(result).toEqual({"isOpen": false, "opensAt": new Date("2019-12-05T14:00:00.000Z")});
     });
@@ -154,7 +157,10 @@ describe("getCurrentState", () => {
           validFrom: '2019-11-05',
           validThrough: '2019-12-10',
         }
-      ], {date: new Date(2019, 11, 4, 19, 0, 0)});
+      ], {
+        date: new Date(2019, 11, 4, 19, 0, 0),
+        rulesTimezone: 'local',
+      });
 
       expect(result).toEqual({"isOpen": false, "opensAt": new Date("2019-12-11T08:00:00.000Z")});
     });
