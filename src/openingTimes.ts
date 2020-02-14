@@ -52,7 +52,7 @@ import {DateTime} from 'luxon';
 
 type WeekdayName = 'monday'|'tuesday'|'wednesday'|'thursday'|'friday'|'saturday'|'sunday';
 const DaysOfTheWeekInOrder: WeekdayName[] = [
-    'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 
 export type OpeningTimesRule = {
@@ -340,5 +340,5 @@ function sortBySpecificity(rules: OpeningTimes): OpeningTimes {
  * Return the day of the week which covers the moment in time given by `time`,
  */
 function getDayOfWeek(time: DateTime): WeekdayName {
-  return DaysOfTheWeekInOrder[time.weekday];
+  return DaysOfTheWeekInOrder[time.weekday-1];
 }

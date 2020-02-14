@@ -93,6 +93,21 @@ describe("getCurrentState", () => {
 
   describe("dayOfWeek option", () => {
 
+    test('sunday rule overrides generic one', () => {
+      const result = getCurrentState([
+        {
+          opens: '09:00',
+          closes: '18:00',
+        },
+        {
+          opens: '10:00',
+          closes: '17:00',
+          dayOfWeek: ['sunday'],
+        },
+      ], {date: DateTime.fromISO('2020-02-16T09:30:00.000+02:00'), rulesTimezone: 'Europe/Kiev'});
+      expect(result).toEqual({"isOpen": false, "opensAt": new Date("2020-02-16T08:00:00.000Z")});
+    });
+
     test('tomorrow closed due to not included in dayOfWeek', () => {
       const result = getCurrentState([
         {
@@ -168,20 +183,21 @@ describe("getCurrentState", () => {
   });
 
   describe('rulesTimezone',() => {
-    const result = getCurrentState(
-      [
-        {
-          opens: '08:00',
-          closes: '18:00'
-        }
-      ],
-      {
-        date: new Date("2019-12-05T07:30:00"),
-        rulesTimezone: 'Europe/Berlin'
-      }
-    );
+    test("test", () => {
+      const result = getCurrentState(
+          [
+            {
+              opens: '08:00',
+              closes: '18:00'
+            }
+          ],
+          {
+            date: new Date("2019-12-05T07:30:00"),
+            rulesTimezone: 'Europe/Berlin'
+          }
+      );
 
-    expect(result).toEqual({"isOpen": true, "closesAt": new Date("2019-12-05T17:00:00.000Z")});
-  })
-
+      expect(result).toEqual({"isOpen": true, "closesAt": new Date("2019-12-05T17:00:00.000Z")});
+    })
+  });
 });
