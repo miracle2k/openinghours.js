@@ -237,13 +237,24 @@ function findMatchingRule(opts: {
   sortedRules: OpeningTimesRule[],
   date: DateTime
 }): OpeningTimesRule|null {
-  for (const rule of opts.sortedRules) {
-    if (!ruleAppliesToDay(rule, opts.date)) {
-      continue;
-    }
-    return rule;
-  }
-  return null;
+
+  const dayRules = opts.sortedRules
+    //  Return the rules for a given day
+    .filter(rule => ruleAppliesToDay(rule, opts.date))
+    //  Return the correct period, if multiple opening hours in a day
+    .filter(rule => {
+
+      const opens = timeToDate(rule.opens, { onDay: opts.date })
+      const closes = timeToDate(rule.closes, { onDay: opts.date })
+
+      if (((opts.date <= closes) || (opts.date <= opens) )) {
+        return rule;
+      }
+
+    })  
+ 
+return dayRules[0] || null;
+
 }
 
 
