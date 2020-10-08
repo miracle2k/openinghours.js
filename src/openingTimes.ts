@@ -241,7 +241,11 @@ function findMatchingRule(opts: {
     if (!ruleAppliesToDay(rule, opts.date)) {
       continue;
     }
-    return rule;
+    
+    const closes = timeToDate(rule.closes, { onDay: opts.date })
+    if ((opts.date <= closes)) {
+      return rule;
+    }
   }
   return null;
 }

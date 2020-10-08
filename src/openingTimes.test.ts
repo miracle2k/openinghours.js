@@ -200,4 +200,34 @@ describe("getCurrentState", () => {
       expect(result).toEqual({"isOpen": true, "closesAt": new Date("2019-12-05T17:00:00.000Z")});
     })
   });
+
+
+  describe("MultipleOpeningTimesSingleDay", () => {
+    test("Return second set of opening hours in a day", () => {
+      const result = getCurrentState(
+        [
+          {
+            dayOfWeek: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+            opens: "08:00",
+            closes: "12:00",
+          },
+          {
+            dayOfWeek: ["monday", "tuesday", "friday"],
+            opens: "14:00",
+            closes: "18:00",
+          },
+          
+        ],
+        {
+          date: new Date("2020-10-05T07:30:00"),
+          rulesTimezone: "GMT",
+        }
+      );
+
+      expect(result).toEqual({
+        isOpen: false,
+        opensAt: new Date("2020-10-05T08:00:00.000Z"),
+      });
+    });
+  });
 });
