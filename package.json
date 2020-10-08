@@ -10,7 +10,8 @@
   "license": "MIT",
   "scripts": {
     "build": "rollup -c && tsc",
-    "test": "jest --t \"Before Second Open, Return Next Opening Time\""
+    "test": "jest --t \"Before Second Open, Return Next Opening Time\"",
+    "testAll": "jest"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^6.0.0",

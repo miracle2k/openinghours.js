@@ -238,39 +238,41 @@ function findMatchingRule(opts: {
   date: DateTime
 }): OpeningTimesRule|null {
 
+  
+  
+
   const dayRules = opts.sortedRules
     //  Return the rules for a given day
     .filter(rule => ruleAppliesToDay(rule, opts.date))
     //  Return the correct period, if multiple opening hours in a day
     .filter(rule => {
 
-      console.log(rule);
-      
+      const now = opts.date;
       const opens = timeToDate(rule.opens, { onDay: opts.date })
       const closes = timeToDate(rule.closes, { onDay: opts.date })
 
-      if ((opts.date <= closes) || (opts.date >= opens) ) {
+      // console.log(now.toString());
+      // console.log(opens.toString());
+      // console.log(closes.toString());
+      // console.log(((opts.date <= closes) || (opts.date <= opens) ));
+      
+      // console.log("------- R U L E --------");
+      
+      // console.log(JSON.stringify(rule,null, 4));
+
+      
+      if (((opts.date <= closes) || (opts.date <= opens) )) {
         return rule;
+      
       }
 
     })
+
+    // console.log(JSON.stringify(dayRules[0],null, 4));
+    
  
 return dayRules[0] || null;
 
-  // for (const rule of opts.sortedRules) {
-  //   if (!ruleAppliesToDay(rule, opts.date)) {
-  //     continue;
-  //   }
-    
-  //   const opens = timeToDate(rule.opens, { onDay: opts.date })
-  //   const closes = timeToDate(rule.closes, { onDay: opts.date })
-
-  //   if ((opts.date <= closes) || (opts.date >= opens) ) {
-  //     return rule;
-  //   }
- 
-  // }
-  // return null;
 
 
 }
